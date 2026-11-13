@@ -65,8 +65,8 @@ class Setup:
 @dataclass(frozen=True)
 class MachineSpec:
     os: str = "ubuntu-24.04"  # ubuntu-24.04 | ubuntu-22.04 | debian-12
-    cpus: int = 2
-    memory_gb: int = 4
+    cpus: int = 1
+    memory_gb: int = 1
     disk_gb: int = 20
     setup: Setup = field(default_factory=Setup)
     labels: Mapping[str, str] = field(default_factory=dict)

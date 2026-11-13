@@ -44,8 +44,8 @@ export interface Setup {
 
 export interface MachineSpec {
   os?: string; // ubuntu-24.04 (default) | ubuntu-22.04 | debian-12
-  cpus?: number; // default 2
-  memoryGb?: number; // default 4
+  cpus?: number; // default 1
+  memoryGb?: number; // default 1
   diskGb?: number; // default 20
   setup?: Setup;
   labels?: Record<string, string>;
@@ -56,7 +56,7 @@ export type FullSpec = Required<Omit<MachineSpec, "ttlSeconds">> & { ttlSeconds:
 
 export function fullSpec(s: MachineSpec): FullSpec {
   return {
-    os: s.os ?? "ubuntu-24.04", cpus: s.cpus ?? 2, memoryGb: s.memoryGb ?? 4,
+    os: s.os ?? "ubuntu-24.04", cpus: s.cpus ?? 1, memoryGb: s.memoryGb ?? 1,
     diskGb: s.diskGb ?? 20, setup: s.setup ?? {}, labels: s.labels ?? {},
     ttlSeconds: s.ttlSeconds === undefined ? 4 * 3600 : s.ttlSeconds,
   };

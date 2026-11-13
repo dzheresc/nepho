@@ -88,6 +88,9 @@ through `sh -c`. Options: `env`, `cwd`, `user`, `pty`.
   use. Port 22 is opened only to the caller's public IP (override with the
   `ssh_cidr` option).
 - Supported `os` values: `ubuntu-24.04`, `ubuntu-22.04`, `debian-12`.
+- The default size is 1 CPU and 1 GB of memory, which gives the smallest
+  instance type of each cloud (`t3.micro`, `e2-micro`, `Standard_B1s`). Ask
+  for more with `cpus` and `memory_gb`; the first large-enough type is used.
 
 ## Limits
 

@@ -71,8 +71,8 @@ type Setup struct {
 // Spec describes a machine. Zero values mean the defaults.
 type Spec struct {
 	OS       string // ubuntu-24.04 (default) | ubuntu-22.04 | debian-12
-	CPUs     int    // default 2
-	MemoryGB int    // default 4
+	CPUs     int    // default 1
+	MemoryGB int    // default 1
 	DiskGB   int    // default 20
 	Setup    Setup
 	Labels   map[string]string
@@ -84,10 +84,10 @@ func (s Spec) withDefaults() Spec {
 		s.OS = "ubuntu-24.04"
 	}
 	if s.CPUs == 0 {
-		s.CPUs = 2
+		s.CPUs = 1
 	}
 	if s.MemoryGB == 0 {
-		s.MemoryGB = 4
+		s.MemoryGB = 1
 	}
 	if s.DiskGB == 0 {
 		s.DiskGB = 20
