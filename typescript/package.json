@@ -1,0 +1,40 @@
+{
+  "name": "nepho",
+  "version": "0.1.0",
+  "description": "One API for machines on Docker, AWS, GCP and Azure",
+  "type": "module",
+  "engines": { "node": ">=20" },
+  "exports": {
+    ".": "./dist/index.js",
+    "./docker": "./dist/docker.js",
+    "./ssh": "./dist/ssh.js",
+    "./aws": "./dist/aws.js",
+    "./gcp": "./dist/gcp.js",
+    "./azure": "./dist/azure.js"
+  },
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsc",
+    "test": "node --import tsx --test --test-concurrency=1 test/*.test.ts"
+  },
+  "dependencies": {
+    "dockerode": "^4.0.2",
+    "ssh2": "^1.16.0"
+  },
+  "optionalDependencies": {
+    "@aws-sdk/client-ec2": "^3.600.0",
+    "@aws-sdk/client-ssm": "^3.600.0",
+    "@azure/arm-compute": "^22.0.0",
+    "@azure/arm-network": "^33.0.0",
+    "@azure/arm-resources": "^5.2.0",
+    "@azure/identity": "^4.4.0",
+    "@google-cloud/compute": "^4.7.0"
+  },
+  "devDependencies": {
+    "@types/dockerode": "^3.3.31",
+    "@types/node": "^22.0.0",
+    "@types/ssh2": "^1.15.1",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0"
+  }
+}

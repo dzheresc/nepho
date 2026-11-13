@@ -1,0 +1,28 @@
+[project]
+name = "nepho"
+version = "0.1.0"
+description = "One API for machines on Docker, AWS, GCP and Azure"
+requires-python = ">=3.10"
+dependencies = []
+
+[project.optional-dependencies]
+docker = ["docker>=7"]
+ssh = ["asyncssh>=2.14"]
+aws = ["nepho[ssh]", "boto3>=1.34"]
+gcp = ["nepho[ssh]", "google-cloud-compute>=1.19"]
+azure = ["nepho[ssh]", "azure-identity>=1.16", "azure-mgmt-resource>=23.1",
+         "azure-mgmt-network>=25", "azure-mgmt-compute>=31"]
+all = ["nepho[docker,aws,gcp,azure]"]
+test = ["pytest>=8", "pytest-asyncio>=0.23"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/nepho"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "session"
+asyncio_default_test_loop_scope = "session"
