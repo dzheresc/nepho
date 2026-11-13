@@ -32,8 +32,9 @@ var images = map[string]struct{ publisher, offer, sku string }{
 var sz = nepho.NewSize
 
 var sizes = []nepho.Size{
-	sz(2, 1, "Standard_B2ts_v2"), sz(2, 4, "Standard_B2ls_v2"), sz(2, 8, "Standard_B2s_v2"),
-	sz(4, 16, "Standard_B4s_v2"), sz(8, 32, "Standard_B8s_v2"), sz(16, 64, "Standard_D16s_v5"), sz(32, 128, "Standard_D32s_v5"),
+	// The B-series is not offered to many new subscriptions (capacity restrictions, zero quota).
+	sz(2, 4, "Standard_D2als_v6"), sz(2, 8, "Standard_D2as_v6"), sz(4, 16, "Standard_D4as_v6"),
+	sz(8, 32, "Standard_D8as_v6"), sz(16, 64, "Standard_D16as_v6"), sz(32, 128, "Standard_D32as_v6"),
 }
 
 type Options struct {

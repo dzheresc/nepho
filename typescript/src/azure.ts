@@ -17,8 +17,9 @@ const IMAGES: Record<string, [string, string, string]> = {
   "debian-12": ["Debian", "debian-12", "12-gen2"],
 };
 const SIZES: [number, number, string][] = [
-  [2, 1, "Standard_B2ts_v2"], [2, 4, "Standard_B2ls_v2"], [2, 8, "Standard_B2s_v2"],
-  [4, 16, "Standard_B4s_v2"], [8, 32, "Standard_B8s_v2"], [16, 64, "Standard_D16s_v5"], [32, 128, "Standard_D32s_v5"],
+  // The B-series is not offered to many new subscriptions (capacity restrictions, zero quota).
+  [2, 4, "Standard_D2als_v6"], [2, 8, "Standard_D2as_v6"], [4, 16, "Standard_D4as_v6"],
+  [8, 32, "Standard_D8as_v6"], [16, 64, "Standard_D16as_v6"], [32, 128, "Standard_D32as_v6"],
 ];
 const MIN_DISK_GB = 30; // size of the marketplace images; the OS disk cannot be smaller
 const notFound = (e: unknown) => (e as { statusCode?: number }).statusCode === 404;
