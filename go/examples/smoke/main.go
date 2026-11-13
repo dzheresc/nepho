@@ -1,5 +1,6 @@
-// One real round trip on AWS: create, run, stream, list, reattach, destroy.
-// The machine has a 30-minute TTL, so it terminates itself if this is interrupted.
+// One real round trip on a cloud: create, run, stream, list, reattach, destroy.
+// Usage: smoke aws|gcp
+// The TTL is 30 minutes; only AWS terminates the machine by itself if this is interrupted.
 package main
 
 import (
@@ -13,11 +14,18 @@ import (
 
 	"example.com/nepho"
 	"example.com/nepho/aws"
+	"example.com/nepho/gcp"
 )
 
 func main() {
 	ctx := context.Background()
-	p, err := aws.New(ctx, aws.Options{KeyPath: os.Getenv("NEPHO_KEY")})
+	var p *nepho.Provider
+	var err error
+	if key := os.Getenv("NEPHO_KEY"); len(os.Args) > 1 && os.Args[1] == "aws" {
+		p, err = aws.New(ctx, aws.Options{KeyPath: key})
+	} else {
+		p, err = gcp.New(ctx, gcp.Options{KeyPath: key})
+	}
 	if err != nil {
 		log.Fatal(err)
 	}

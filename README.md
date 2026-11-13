@@ -94,12 +94,17 @@ through `sh -c`. Options: `env`, `cwd`, `user`, `pty`.
 
 ## Limits
 
-- AWS has been run against a real account from all three languages (Ubuntu
-  24.04: create with prerequisites, execute, list, attach, destroy). Not yet
-  exercised there: TTL self-termination, `reap()`, Debian 12, Ubuntu 22.04.
-- GCP and Azure have never been run against a real account. They compile and
-  type-check against the current SDKs, and the SSH transport they share with
-  AWS is tested against an sshd in a container.
+- AWS and GCP have been run against real accounts from all three languages
+  (Ubuntu 24.04: create with prerequisites, execute, list, attach, destroy).
+  Not yet exercised there: `reap()`, Debian 12, Ubuntu 22.04, and TTL
+  self-termination on AWS.
+- Azure has never been run against a real account. It compiles and
+  type-checks against the current SDKs, and the SSH transport it shares with
+  the other clouds is tested against an sshd in a container.
+- EC2 keeps listing a terminated instance for about an hour. On GCP a
+  destroyed machine disappears from `list()` at once.
+- On GCP the stock firewall rule `default-allow-ssh` opens port 22 to
+  everyone, so the per-machine rule limits nothing until that rule is deleted.
 - A Docker "machine" is a container: no systemd, shared kernel.
 - SSH host keys of new VMs are not verified.
 - Only AWS and Docker stop a machine by themselves at the TTL. On GCP and
@@ -134,13 +139,25 @@ Credentials come from the SDK default chain (`~/.aws/config` and
 `ssm:GetParameter` on `arn:aws:ssm:*::parameter/aws/service/*`. The last three
 EC2 actions can be limited to resources tagged `nepho-managed=true`.
 
-Each example launches one small instance for a few minutes and destroys it:
+## Running against GCP
+
+Credentials are Application Default Credentials; the project is taken from
+them. With a service account key: `GOOGLE_APPLICATION_CREDENTIALS=<key.json>`.
+The roles Compute Instance Admin (v1) and Compute Security Admin are enough.
+The Compute Engine API must be enabled and the `default` network must exist.
+The zone is a provider option, default `us-central1-a`.
+
+## Smoke examples
+
+Each example launches one small instance for a few minutes and destroys it.
+The argument is `aws` or `gcp`:
 
 ```sh
-cd python && .venv/bin/python examples/aws_smoke.py
-./node.sh npx tsx examples/aws_smoke.ts
-./go.sh go run ./examples/aws_smoke
+cd python && .venv/bin/python examples/smoke.py aws
+./node.sh npx tsx examples/smoke.ts aws
+./go.sh go run ./examples/smoke aws
 ```
 
 `node.sh` and `go.sh` mount `~/.aws` (read-only) and `~/.config/nepho` into
-the container.
+the container. If `~/.config/nepho/gcp.json` exists they use it as the GCP
+service account key.

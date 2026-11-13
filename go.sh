@@ -10,4 +10,5 @@ cd "$(dirname "$0")/go" && exec docker run --rm -i --network host \
   -v "$HOME/.cache/nepho-go":/cache \
   -v "$HOME/.aws":/aws:ro -e AWS_SHARED_CREDENTIALS_FILE=/aws/credentials -e AWS_CONFIG_FILE=/aws/config \
   -v "$HOME/.config/nepho":/nepho -e NEPHO_KEY=/nepho/id_rsa \
+  $([ -f "$HOME/.config/nepho/gcp.json" ] && echo "-e GOOGLE_APPLICATION_CREDENTIALS=/nepho/gcp.json") \
   -v /var/run/docker.sock:/var/run/docker.sock -v "$PWD":/w -w /w golang:1.26-bookworm "$@"

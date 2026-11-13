@@ -1,9 +1,12 @@
-// One real round trip on AWS: create, run, stream, list, reattach, destroy.
-// The machine has a 30-minute TTL, so it terminates itself if this is interrupted.
+// One real round trip on a cloud: create, run, stream, list, reattach, destroy.
+// Usage: smoke.ts aws|gcp
+// The TTL is 30 minutes; only AWS terminates the machine by itself if this is interrupted.
 import { once } from "node:events";
-import { AwsProvider } from "../src/aws.js";
 
-const p = new AwsProvider({ keyPath: process.env.NEPHO_KEY });
+const opts = { keyPath: process.env.NEPHO_KEY };
+const p = process.argv[2] === "aws"
+  ? new (await import("../src/aws.js")).AwsProvider(opts)
+  : new (await import("../src/gcp.js")).GcpProvider(opts);
 let t = Date.now();
 let m = await p.create({
   os: "ubuntu-24.04", ttlSeconds: 1800,

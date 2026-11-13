@@ -1,18 +1,24 @@
-"""One real round trip on AWS: create, run, stream, list, reattach, destroy.
+"""One real round trip on a cloud: create, run, stream, list, reattach, destroy.
 
-Costs a few cents: one small instance for a few minutes. The machine has a
-30-minute TTL, so it terminates itself even if this script is interrupted.
+Usage: smoke.py aws|gcp
+
+Costs a few cents: one small instance for a few minutes. The TTL is 30
+minutes; only AWS terminates the machine by itself if this is interrupted.
 """
 import asyncio
+import sys
 import time
 from datetime import timedelta
 
 from nepho import MachineSpec, Setup
-from nepho.aws import AwsProvider
 
 
 async def main():
-    p = AwsProvider()
+    if sys.argv[1] == "aws":
+        from nepho.aws import AwsProvider as Cloud
+    else:
+        from nepho.gcp import GcpProvider as Cloud
+    p = Cloud()
     t = time.time()
     m = await p.create(MachineSpec(os="ubuntu-24.04", ttl=timedelta(minutes=30), setup=Setup(
         packages=["jq"], files={"/etc/nepho-test": "hello\n"},
@@ -38,7 +44,6 @@ async def main():
         print("destroyed", f"{time.time() - t:.0f}s")
         for i in await p.list():
             print("after:", i.id, i.state)
-        print("groups left:", len(p._groups("nepho-managed", "true")))
 
 
 asyncio.run(main())
