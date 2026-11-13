@@ -17,9 +17,8 @@ const IMAGES: Record<string, [string, string, string]> = {
   "debian-12": ["Debian", "debian-12", "12-gen2"],
 };
 const SIZES: [number, number, string][] = [
-  [1, 1, "Standard_B1s"], [1, 2, "Standard_B1ms"], [2, 4, "Standard_B2s"], [2, 8, "Standard_B2ms"],
-  [4, 16, "Standard_B4ms"], [8, 32, "Standard_B8ms"], [16, 64, "Standard_D16s_v5"],
-  [32, 128, "Standard_D32s_v5"],
+  [2, 1, "Standard_B2ts_v2"], [2, 4, "Standard_B2ls_v2"], [2, 8, "Standard_B2s_v2"],
+  [4, 16, "Standard_B4s_v2"], [8, 32, "Standard_B8s_v2"], [16, 64, "Standard_D16s_v5"], [32, 128, "Standard_D32s_v5"],
 ];
 const MIN_DISK_GB = 30; // size of the marketplace images; the OS disk cannot be smaller
 const notFound = (e: unknown) => (e as { statusCode?: number }).statusCode === 404;

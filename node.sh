@@ -9,4 +9,5 @@ cd "$(dirname "$0")/typescript" && exec docker run --rm -i --network host \
   -v "$HOME/.aws":/aws:ro -e AWS_SHARED_CREDENTIALS_FILE=/aws/credentials -e AWS_CONFIG_FILE=/aws/config \
   -v "$HOME/.config/nepho":/nepho -e NEPHO_KEY=/nepho/id_rsa \
   $([ -f "$HOME/.config/nepho/gcp.json" ] && echo "-e GOOGLE_APPLICATION_CREDENTIALS=/nepho/gcp.json") \
+  $([ -f "$HOME/.config/nepho/azure.env" ] && echo "--env-file $HOME/.config/nepho/azure.env") \
   -v /var/run/docker.sock:/var/run/docker.sock -v "$PWD":/w -w /w node:22-bookworm "$@"

@@ -1,5 +1,5 @@
 // One real round trip on a cloud: create, run, stream, list, reattach, destroy.
-// Usage: smoke aws|gcp
+// Usage: smoke aws|gcp|azure [instance-size]
 // The TTL is 30 minutes; only AWS terminates the machine by itself if this is interrupted.
 package main
 
@@ -14,6 +14,7 @@ import (
 
 	"example.com/nepho"
 	"example.com/nepho/aws"
+	"example.com/nepho/azure"
 	"example.com/nepho/gcp"
 )
 
@@ -21,10 +22,22 @@ func main() {
 	ctx := context.Background()
 	var p *nepho.Provider
 	var err error
-	if key := os.Getenv("NEPHO_KEY"); len(os.Args) > 1 && os.Args[1] == "aws" {
-		p, err = aws.New(ctx, aws.Options{KeyPath: key})
-	} else {
-		p, err = gcp.New(ctx, gcp.Options{KeyPath: key})
+	key, cloud, size := os.Getenv("NEPHO_KEY"), "", ""
+	if len(os.Args) > 1 {
+		cloud = os.Args[1]
+	}
+	if len(os.Args) > 2 {
+		size = os.Args[2]
+	}
+	switch cloud {
+	case "aws":
+		p, err = aws.New(ctx, aws.Options{KeyPath: key, InstanceType: size})
+	case "gcp":
+		p, err = gcp.New(ctx, gcp.Options{KeyPath: key, MachineType: size})
+	case "azure":
+		p, err = azure.New(azure.Options{KeyPath: key, VMSize: size})
+	default:
+		log.Fatal("usage: smoke aws|gcp|azure")
 	}
 	if err != nil {
 		log.Fatal(err)

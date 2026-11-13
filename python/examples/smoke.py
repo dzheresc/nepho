@@ -1,6 +1,6 @@
 """One real round trip on a cloud: create, run, stream, list, reattach, destroy.
 
-Usage: smoke.py aws|gcp
+Usage: smoke.py aws|gcp|azure [instance-size]
 
 Costs a few cents: one small instance for a few minutes. The TTL is 30
 minutes; only AWS terminates the machine by itself if this is interrupted.
@@ -16,9 +16,12 @@ from nepho import MachineSpec, Setup
 async def main():
     if sys.argv[1] == "aws":
         from nepho.aws import AwsProvider as Cloud
-    else:
+    elif sys.argv[1] == "gcp":
         from nepho.gcp import GcpProvider as Cloud
-    p = Cloud()
+    else:
+        from nepho.azure import AzureProvider as Cloud
+    size = {"aws": "instance_type", "gcp": "machine_type", "azure": "vm_size"}[sys.argv[1]]
+    p = Cloud(**{size: sys.argv[2]} if len(sys.argv) > 2 else {})
     t = time.time()
     m = await p.create(MachineSpec(os="ubuntu-24.04", ttl=timedelta(minutes=30), setup=Setup(
         packages=["jq"], files={"/etc/nepho-test": "hello\n"},

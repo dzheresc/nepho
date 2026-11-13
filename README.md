@@ -89,18 +89,18 @@ through `sh -c`. Options: `env`, `cwd`, `user`, `pty`.
   `ssh_cidr` option).
 - Supported `os` values: `ubuntu-24.04`, `ubuntu-22.04`, `debian-12`.
 - The default size is 1 CPU and 1 GB of memory, which gives the smallest
-  instance type of each cloud (`t3.micro`, `e2-micro`, `Standard_B1s`). Ask
+  instance type of each cloud (`t3.micro`, `e2-micro`, `Standard_B2ts_v2`). Ask
   for more with `cpus` and `memory_gb`; the first large-enough type is used.
 
 ## Limits
 
-- AWS and GCP have been run against real accounts from all three languages
-  (Ubuntu 24.04: create with prerequisites, execute, list, attach, destroy).
-  Not yet exercised there: `reap()`, Debian 12, Ubuntu 22.04, and TTL
-  self-termination on AWS.
-- Azure has never been run against a real account. It compiles and
-  type-checks against the current SDKs, and the SSH transport it shares with
-  the other clouds is tested against an sshd in a container.
+- AWS, GCP and Azure have been run against real accounts from all three
+  languages (Ubuntu 24.04: create with prerequisites, execute, list, attach,
+  destroy). Not yet exercised there: `reap()`, Debian 12, Ubuntu 22.04, and
+  TTL self-termination on AWS.
+- On Azure the default size `Standard_B2ts_v2` has not been launched: the test
+  subscription has no core quota for that family, so the runs used
+  `Standard_D2als_v6`. See "Running against Azure".
 - EC2 keeps listing a terminated instance for about an hour. On GCP a
   destroyed machine disappears from `list()` at once.
 - On GCP the stock firewall rule `default-allow-ssh` opens port 22 to
@@ -147,17 +147,39 @@ The roles Compute Instance Admin (v1) and Compute Security Admin are enough.
 The Compute Engine API must be enabled and the `default` network must exist.
 The zone is a provider option, default `us-central1-a`.
 
+## Running against Azure
+
+Credentials come from `DefaultAzureCredential`. With an app registration set
+`AZURE_SUBSCRIPTION_ID`, `AZURE_TENANT_ID`, `AZURE_CLIENT_ID` and
+`AZURE_CLIENT_SECRET`. The app needs the Contributor role on the subscription,
+because each machine gets its own resource group. The resource providers
+`Microsoft.Compute` and `Microsoft.Network` must be registered. The location
+is a provider option, default `eastus`.
+
+New subscriptions often have a core quota of 0 for the v2 B-series, and
+`create()` then fails with `OperationNotAllowed`. Either raise the quota
+"Standard Bsv2 Family vCPUs" for the region in the portal (Quotas, Compute), or
+pass a size from a family that has quota with the `vm_size` option.
+
+Azure creates a resource group `NetworkWatcherRG` by itself; it is not a nepho
+resource.
+
 ## Smoke examples
 
 Each example launches one small instance for a few minutes and destroys it.
-The argument is `aws` or `gcp`:
+The argument is `aws`, `gcp` or `azure`, optionally followed by an instance
+size that overrides the default:
 
 ```sh
 cd python && .venv/bin/python examples/smoke.py aws
-./node.sh npx tsx examples/smoke.ts aws
-./go.sh go run ./examples/smoke aws
+./node.sh npx tsx examples/smoke.ts gcp
+./go.sh go run ./examples/smoke azure Standard_D2als_v6
 ```
+
+Outside the containers, load the Azure variables first:
+`set -a; . ~/.config/nepho/azure.env; set +a`.
 
 `node.sh` and `go.sh` mount `~/.aws` (read-only) and `~/.config/nepho` into
 the container. If `~/.config/nepho/gcp.json` exists they use it as the GCP
-service account key.
+service account key, and `~/.config/nepho/azure.env` is loaded as environment
+variables.

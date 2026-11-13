@@ -20,9 +20,8 @@ IMAGES = {
     "ubuntu-22.04": ("Canonical", "0001-com-ubuntu-server-jammy", "22_04-lts-gen2"),
     "debian-12": ("Debian", "debian-12", "12-gen2"),
 }
-SIZES = [(1, 1, "Standard_B1s"), (1, 2, "Standard_B1ms"), (2, 4, "Standard_B2s"),
-         (2, 8, "Standard_B2ms"), (4, 16, "Standard_B4ms"), (8, 32, "Standard_B8ms"),
-         (16, 64, "Standard_D16s_v5"), (32, 128, "Standard_D32s_v5")]
+SIZES = [(2, 1, "Standard_B2ts_v2"), (2, 4, "Standard_B2ls_v2"), (2, 8, "Standard_B2s_v2"),
+         (4, 16, "Standard_B4s_v2"), (8, 32, "Standard_B8s_v2"), (16, 64, "Standard_D16s_v5"), (32, 128, "Standard_D32s_v5")]
 MIN_DISK_GB = 30  # size of the marketplace images; the OS disk cannot be smaller
 
 
@@ -55,37 +54,41 @@ class AzureProvider(Provider):
         size = self._vm_size or pick_size(SIZES, spec.cpus, spec.memory_gb)
         loc, net = self._location, self._net
         self._res.resource_groups.create_or_update(id, {"location": loc, "tags": labels})
+        # Request bodies are plain dicts in the REST wire format: the SDK sends them unchanged.
         nsg = net.network_security_groups.begin_create_or_update(id, "nsg", {
-            "location": loc, "security_rules": [{
-                "name": "ssh", "protocol": "Tcp", "direction": "Inbound", "access": "Allow",
-                "priority": 100, "source_address_prefix": self._ssh_cidr or my_cidr(),
-                "source_port_range": "*", "destination_address_prefix": "*",
-                "destination_port_range": "22"}]}).result()
+            "location": loc, "properties": {"securityRules": [{"name": "ssh", "properties": {
+                "protocol": "Tcp", "direction": "Inbound", "access": "Allow", "priority": 100,
+                "sourceAddressPrefix": self._ssh_cidr or my_cidr(), "sourcePortRange": "*",
+                "destinationAddressPrefix": "*", "destinationPortRange": "22"}}]}}).result()
         vnet = net.virtual_networks.begin_create_or_update(id, "vnet", {
-            "location": loc, "address_space": {"address_prefixes": ["10.0.0.0/16"]},
-            "subnets": [{"name": "default", "address_prefix": "10.0.0.0/24"}]}).result()
+            "location": loc, "properties": {
+                "addressSpace": {"addressPrefixes": ["10.0.0.0/16"]},
+                "subnets": [{"name": "default",
+                             "properties": {"addressPrefix": "10.0.0.0/24"}}]}}).result()
         ip = net.public_ip_addresses.begin_create_or_update(id, "ip", {
             "location": loc, "sku": {"name": "Standard"},
-            "public_ip_allocation_method": "Static"}).result()
+            "properties": {"publicIPAllocationMethod": "Static"}}).result()
         nic = net.network_interfaces.begin_create_or_update(id, "nic", {
-            "location": loc, "network_security_group": {"id": nsg.id},
-            "ip_configurations": [{"name": "ipconfig", "subnet": {"id": vnet.subnets[0].id},
-                                   "public_ip_address": {"id": ip.id}}]}).result()
+            "location": loc, "properties": {
+                "networkSecurityGroup": {"id": nsg.id},
+                "ipConfigurations": [{"name": "ipconfig", "properties": {
+                    "subnet": {"id": vnet.subnets[0].id},
+                    "publicIPAddress": {"id": ip.id}}}]}}).result()
         self._vms.virtual_machines.begin_create_or_update(id, "vm", {
-            "location": loc,
-            "hardware_profile": {"vm_size": size},
-            "storage_profile": {
-                "image_reference": {"publisher": publisher, "offer": offer, "sku": sku,
-                                    "version": "latest"},
-                "os_disk": {"create_option": "FromImage",
-                            "disk_size_gb": max(spec.disk_gb, MIN_DISK_GB)}},
-            "os_profile": {
-                "computer_name": id, "admin_username": USER,
-                "linux_configuration": {
-                    "disable_password_authentication": True,
-                    "ssh": {"public_keys": [{"path": f"/home/{USER}/.ssh/authorized_keys",
-                                             "key_data": self._pub}]}}},
-            "network_profile": {"network_interfaces": [{"id": nic.id}]}}).result()
+            "location": loc, "properties": {
+                "hardwareProfile": {"vmSize": size},
+                "storageProfile": {
+                    "imageReference": {"publisher": publisher, "offer": offer, "sku": sku,
+                                       "version": "latest"},
+                    "osDisk": {"createOption": "FromImage",
+                               "diskSizeGB": max(spec.disk_gb, MIN_DISK_GB)}},
+                "osProfile": {
+                    "computerName": id, "adminUsername": USER,
+                    "linuxConfiguration": {
+                        "disablePasswordAuthentication": True,
+                        "ssh": {"publicKeys": [{"path": f"/home/{USER}/.ssh/authorized_keys",
+                                                "keyData": self._pub}]}}},
+                "networkProfile": {"networkInterfaces": [{"id": nic.id}]}}}).result()
         return Info(id, RUNNING, labels, ip.ip_address, USER)
 
     def _info(self, group) -> Info:

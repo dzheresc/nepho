@@ -32,9 +32,8 @@ var images = map[string]struct{ publisher, offer, sku string }{
 var sz = nepho.NewSize
 
 var sizes = []nepho.Size{
-	sz(1, 1, "Standard_B1s"), sz(1, 2, "Standard_B1ms"), sz(2, 4, "Standard_B2s"), sz(2, 8, "Standard_B2ms"),
-	sz(4, 16, "Standard_B4ms"), sz(8, 32, "Standard_B8ms"), sz(16, 64, "Standard_D16s_v5"),
-	sz(32, 128, "Standard_D32s_v5"),
+	sz(2, 1, "Standard_B2ts_v2"), sz(2, 4, "Standard_B2ls_v2"), sz(2, 8, "Standard_B2s_v2"),
+	sz(4, 16, "Standard_B4s_v2"), sz(8, 32, "Standard_B8s_v2"), sz(16, 64, "Standard_D16s_v5"), sz(32, 128, "Standard_D32s_v5"),
 }
 
 type Options struct {

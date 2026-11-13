@@ -1,12 +1,13 @@
 // One real round trip on a cloud: create, run, stream, list, reattach, destroy.
-// Usage: smoke.ts aws|gcp
+// Usage: smoke.ts aws|gcp|azure [instance-size]
 // The TTL is 30 minutes; only AWS terminates the machine by itself if this is interrupted.
 import { once } from "node:events";
 
-const opts = { keyPath: process.env.NEPHO_KEY };
-const p = process.argv[2] === "aws"
-  ? new (await import("../src/aws.js")).AwsProvider(opts)
-  : new (await import("../src/gcp.js")).GcpProvider(opts);
+const [cloud, size] = process.argv.slice(2);
+const opts = { keyPath: process.env.NEPHO_KEY, instanceType: size, machineType: size, vmSize: size };
+const p = cloud === "aws" ? new (await import("../src/aws.js")).AwsProvider(opts)
+  : cloud === "gcp" ? new (await import("../src/gcp.js")).GcpProvider(opts)
+  : new (await import("../src/azure.js")).AzureProvider(opts);
 let t = Date.now();
 let m = await p.create({
   os: "ubuntu-24.04", ttlSeconds: 1800,
