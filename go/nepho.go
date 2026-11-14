@@ -1,4 +1,4 @@
-// Package nepho is one API for machines on Docker, AWS, GCP and Azure.
+// Package nepho is one API for machines and services on Docker, AWS, GCP and Azure.
 //
 // The backends live in sub-packages (docker, aws, gcp, azure) so that only the
 // SDK you use is linked. Each returns a *Provider:
@@ -178,22 +178,10 @@ func quoteAll(argv []string) string {
 	return strings.Join(q, " ")
 }
 
-func newID() string {
+func newID(prefix string) string {
 	b := make([]byte, 5)
 	_, _ = rand.Read(b)
-	return "m-" + hex.EncodeToString(b)
-}
-
-func makeLabels(id string, spec Spec) map[string]string {
-	labels := map[string]string{}
-	for k, v := range spec.Labels {
-		labels[k] = v
-	}
-	labels[LManaged], labels[LID] = "true", id
-	if spec.TTL > 0 {
-		labels[LExpires] = strconv.FormatInt(time.Now().Add(spec.TTL).Unix(), 10)
-	}
-	return labels
+	return prefix + "-" + hex.EncodeToString(b)
 }
 
 // ExpiresOf reads the expiry time from labels; the zero time means "never".
@@ -439,10 +427,10 @@ func NewMachine(p *Provider, i Info, t Transport) *Machine {
 // Create makes a machine and applies spec.Setup. It returns when the machine is ready for Execute.
 func (p *Provider) Create(ctx context.Context, spec Spec) (*Machine, error) {
 	spec = spec.withDefaults()
-	id := newID()
+	id := newID("m")
 	var m *Machine
 	err := func() error {
-		info, err := p.d.Launch(ctx, id, spec, makeLabels(id, spec))
+		info, err := p.d.Launch(ctx, id, spec, makeLabels(id, spec.Labels, spec.TTL))
 		if err != nil {
 			return err
 		}
@@ -492,11 +480,12 @@ func (p *Provider) Attach(ctx context.Context, id string) (*Machine, error) {
 	return nil, fmt.Errorf("%w: %s: no machine %s", ErrProvision, p.Name(), id)
 }
 
+// Destroy destroys a machine or a service.
 func (p *Provider) Destroy(ctx context.Context, id string) error {
 	return p.wrap(p.d.Destroy(ctx, id))
 }
 
-// Reap destroys machines whose TTL has passed and returns how many.
+// Reap destroys machines and services whose TTL has passed and returns how many.
 func (p *Provider) Reap(ctx context.Context) (int, error) {
 	var ids []string
 	if r, ok := p.d.(reaper); ok {
@@ -509,9 +498,21 @@ func (p *Provider) Reap(ctx context.Context) (int, error) {
 		if err != nil {
 			return 0, p.wrap(err)
 		}
+		expired := func(id string, labels map[string]string) {
+			if e := ExpiresOf(labels); !e.IsZero() && e.Before(time.Now()) {
+				ids = append(ids, id)
+			}
+		}
 		for _, i := range infos {
-			if e := ExpiresOf(i.Labels); !e.IsZero() && e.Before(time.Now()) {
-				ids = append(ids, i.ID)
+			expired(i.ID, i.Labels)
+		}
+		if sd, ok := p.d.(ServiceDriver); ok {
+			services, err := sd.ListServices(ctx)
+			if err != nil {
+				return 0, p.wrap(err)
+			}
+			for _, s := range services {
+				expired(s.ID, s.Labels)
 			}
 		}
 	}

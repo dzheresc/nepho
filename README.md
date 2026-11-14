@@ -1,8 +1,11 @@
 # nephodrome
 
-One API for machines on Docker, AWS, GCP and Azure. The package is called
-`nepho` and exists three times with the same behaviour: `python/`,
+One API for machines and services on Docker, AWS, GCP and Azure. The package
+is called `nepho` and exists three times with the same behaviour: `python/`,
 `typescript/` and `go/`. Linux guests only.
+
+Machines work on all four backends. Services (PostgreSQL, Valkey) work on
+Docker only so far.
 
 ## What it does
 
@@ -69,6 +72,48 @@ m.Destroy(ctx)
 A command given as a list runs as is. A string (`nepho.Sh("...")` in Go) runs
 through `sh -c`. Options: `env`, `cwd`, `user`, `pty`.
 
+## Services
+
+A service is a database or cache that clients reach with their normal driver;
+`nepho` creates it and hands back the connection string.
+
+```python
+from nepho import ServiceSpec
+
+db = await provider.create_service(ServiceSpec(kind="postgres", version="17"))
+print(db.url)            # postgresql://nepho:<password>@127.0.0.1:32768/nepho
+print(db.internal_url)   # the same service as seen from machines of this provider
+cache = await provider.create_service(ServiceSpec(kind="valkey"))
+print(cache.url)         # redis://default:<password>@127.0.0.1:32769/0
+
+await provider.list_services()             # separate from list(), which is machines only
+db = await provider.attach_service(db.id)  # later, possibly from another process
+await db.destroy()
+```
+
+TypeScript: `createService({ kind: "postgres" })`, `listServices()`,
+`attachService(id)`, `service.url`, `service.internalUrl`. Go:
+`CreateService(ctx, nepho.ServiceSpec{Kind: "postgres"})`, `ListServices`,
+`AttachService`, `service.URL()`, `service.InternalURL()`.
+
+| Kind | Default version | Docker image | URL scheme |
+|---|---|---|---|
+| `postgres` | 17 | `postgres:<version>` | `postgresql://` |
+| `valkey` | 8 | `valkey/valkey:<version>` | `redis://` |
+
+- `create_service` returns when the server accepts connections. A random
+  password is generated for each service.
+- A service has two endpoints. `host`/`port` is for the caller: on Docker a
+  random port on `127.0.0.1`, so it is not reachable from other hosts.
+  `internal_host`/`internal_port` is for machines of the same provider: on
+  Docker the container's bridge address.
+- Service ids start with `s-`, machine ids with `m-`. `destroy(id)` and
+  `reap()` cover both.
+- On Docker the data lives in the container and is deleted with it, the
+  password is stored in the container label `nepho-secret`, and nothing stops a
+  service at its TTL (default 4 hours): it runs until `reap()` or `destroy()`.
+- `version` is used as the image tag on Docker, so any published tag works.
+
 ## How it works
 
 | Backend | Machine | Commands run over |
@@ -82,7 +127,7 @@ through `sh -c`. Options: `env`, `cwd`, `user`, `pty`.
   apt packages, files, script. A failure raises `SetupError` with the output
   and destroys the half-made machine.
 - Every resource carries the labels `nepho-managed`, `nepho-id` and
-  `nepho-expires`. That is how `list`, `attach` and `reap` find machines, so
+  `nepho-expires`; services also carry `nepho-kind` and `nepho-version`. That is how `list`, `attach` and `reap` find machines, so
   the three implementations can manage each other's machines.
 - The clouds share one SSH key, `~/.config/nepho/id_rsa`, created on first
   use. Port 22 is opened only to the caller's public IP (override with the
@@ -115,7 +160,7 @@ through `sh -c`. Options: `env`, `cwd`, `user`, `pty`.
 
 ## Tests
 
-The same 24 conformance checks exist in each language. They need only Docker.
+The same 28 conformance checks exist in each language. They need only Docker.
 Run one suite at a time: they share the Docker daemon and count each other's
 machines.
 

@@ -9,6 +9,9 @@ export const L_MANAGED = "nepho-managed";
 export const L_ID = "nepho-id";
 export const L_EXPIRES = "nepho-expires"; // unix seconds
 export const L_USER = "nepho-user"; // SSH login user, where it depends on the OS
+export const L_KIND = "nepho-kind"; // services only: postgres | valkey
+export const L_VERSION = "nepho-version"; // services only
+export const L_SECRET = "nepho-secret"; // services on Docker: the generated password
 
 export type State = "pending" | "running" | "stopped" | "terminated";
 
@@ -101,10 +104,10 @@ export interface Transport {
 
 export const shq = (s: string): string => `'${s.replace(/'/g, `'\\''`)}'`;
 export const shjoin = (argv: string[]): string => argv.map(shq).join(" ");
-export const newId = (): string => "m-" + randomBytes(5).toString("hex");
+export const newId = (prefix = "m"): string => `${prefix}-` + randomBytes(5).toString("hex");
 export const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
-export function makeLabels(id: string, spec: FullSpec): Record<string, string> {
+export function makeLabels(id: string, spec: Pick<FullSpec, "labels" | "ttlSeconds">): Record<string, string> {
   const labels: Record<string, string> = { ...spec.labels, [L_MANAGED]: "true", [L_ID]: id };
   if (spec.ttlSeconds !== null) {
     labels[L_EXPIRES] = String(Math.floor(Date.now() / 1000 + spec.ttlSeconds));
@@ -282,6 +285,91 @@ export async function applySetup(m: Machine, setup: Setup): Promise<void> {
 
 // ---------------------------------------------------------------- provider
 
+// ---------------------------------------------------------------- services
+
+export const SERVICES: Record<string, { port: number; version: string; scheme: string; user: string; database: string }> = {
+  postgres: { port: 5432, version: "17", scheme: "postgresql", user: "nepho", database: "nepho" },
+  valkey: { port: 6379, version: "8", scheme: "redis", user: "default", database: "0" },
+};
+
+export interface ServiceSpec {
+  kind: string; // postgres | valkey
+  version?: string; // major version; default: see SERVICES
+  cpus?: number; // default 1
+  memoryGb?: number; // default 1
+  diskGb?: number; // default 20
+  labels?: Record<string, string>;
+  ttlSeconds?: number | null; // default 4 hours; null = never expires
+}
+
+export type FullServiceSpec = Required<Omit<ServiceSpec, "ttlSeconds">> & { ttlSeconds: number | null };
+
+/**
+ * What a provider knows about one service. `host`/`port` is the endpoint as
+ * seen from the caller; `internalHost`/`internalPort` is the one to use from
+ * machines of the same provider. Either can be missing.
+ */
+export interface ServiceInfo {
+  id: string;
+  kind: string;
+  version: string;
+  state: State;
+  labels: Record<string, string>;
+  user: string;
+  password: string;
+  database: string;
+  host?: string;
+  port?: number;
+  internalHost?: string;
+  internalPort?: number;
+}
+
+/** A running database or cache. Clients connect with their normal driver. */
+export class Service implements ServiceInfo {
+  readonly id!: string;
+  readonly kind!: string;
+  readonly version!: string;
+  state!: State;
+  readonly labels!: Record<string, string>;
+  readonly user!: string;
+  readonly password!: string;
+  readonly database!: string;
+  readonly host?: string;
+  readonly port?: number;
+  readonly internalHost?: string;
+  readonly internalPort?: number;
+  readonly provider: string;
+  readonly expires?: Date;
+  readonly #owner: Provider;
+
+  constructor(owner: Provider, info: ServiceInfo) {
+    Object.assign(this, info);
+    this.#owner = owner;
+    this.provider = owner.name;
+    this.expires = expiresOf(info.labels);
+  }
+
+  #url(host?: string, port?: number): string | undefined {
+    if (host === undefined) return undefined;
+    return `${SERVICES[this.kind]!.scheme}://${this.user}:${this.password}@${host}:${port}/${this.database}`;
+  }
+
+  get url(): string | undefined {
+    return this.#url(this.host, this.port);
+  }
+
+  get internalUrl(): string | undefined {
+    return this.#url(this.internalHost, this.internalPort);
+  }
+
+  async destroy(): Promise<void> {
+    await this.#owner.destroy(this.id);
+    this.state = "terminated";
+  }
+}
+
+// ---------------------------------------------------------------- provider
+
 /** Base class. Subclasses implement the `launch`, `infos`, `remove` and `transport` hooks. */
 export abstract class Provider {
   abstract readonly name: string;
@@ -292,9 +380,19 @@ export abstract class Provider {
   protected abstract remove(id: string): Promise<void>;
   protected abstract transport(info: Info): Transport;
 
+  /** Resolves when the service accepts connections. */
+  protected async launchService(_id: string, _spec: FullServiceSpec, _labels: Record<string, string>): Promise<ServiceInfo> {
+    throw new ProvisionError(`${this.name}: services are not supported yet`);
+  }
+
+  protected async serviceInfos(): Promise<ServiceInfo[]> {
+    return [];
+  }
+
   protected async reapable(): Promise<string[]> {
     const now = new Date();
-    return (await this.infos()).filter((i) => (expiresOf(i.labels) ?? now) < now).map((i) => i.id);
+    return [...(await this.infos()), ...(await this.serviceInfos())]
+      .filter((i) => (expiresOf(i.labels) ?? now) < now).map((i) => i.id);
   }
 
   protected async ready(_m: Machine, _spec: FullSpec): Promise<void> {}
@@ -328,11 +426,42 @@ export abstract class Provider {
     return m;
   }
 
+  /** Destroy a machine or a service. */
   async destroy(id: string): Promise<void> {
     await this.guard(() => this.remove(id));
   }
 
-  /** Destroy machines whose TTL has passed. Returns how many. */
+  /** Create a database or cache. Resolves when it accepts connections. */
+  async createService(spec: ServiceSpec): Promise<Service> {
+    const kind = SERVICES[spec.kind];
+    if (!kind) throw new ProvisionError(`${this.name}: unknown service kind '${spec.kind}'`);
+    const full: FullServiceSpec = {
+      kind: spec.kind, version: spec.version ?? kind.version, cpus: spec.cpus ?? 1,
+      memoryGb: spec.memoryGb ?? 1, diskGb: spec.diskGb ?? 20, labels: spec.labels ?? {},
+      ttlSeconds: spec.ttlSeconds === undefined ? 4 * 3600 : spec.ttlSeconds,
+    };
+    const id = newId("s");
+    const labels = { ...makeLabels(id, full), [L_KIND]: full.kind, [L_VERSION]: full.version };
+    try {
+      return new Service(this, await this.guard(() => this.launchService(id, full, labels)));
+    } catch (e) {
+      await this.remove(id).catch(() => {});
+      throw e;
+    }
+  }
+
+  /** Every service the backend still knows, in any state. */
+  async listServices(): Promise<Service[]> {
+    return (await this.guard(() => this.serviceInfos())).map((i) => new Service(this, i));
+  }
+
+  async attachService(id: string): Promise<Service> {
+    const s = (await this.listServices()).find((x) => x.id === id);
+    if (!s) throw new ProvisionError(`${this.name}: no service ${id}`);
+    return s;
+  }
+
+  /** Destroy machines and services whose TTL has passed. Returns how many. */
   async reap(): Promise<number> {
     const ids = await this.guard(() => this.reapable());
     for (const id of ids) await this.destroy(id);

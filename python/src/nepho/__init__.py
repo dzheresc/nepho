@@ -1,4 +1,4 @@
-"""One API for machines on Docker, AWS, GCP and Azure.
+"""One API for machines and services on Docker, AWS, GCP and Azure.
 
 Providers live in their own modules so that only the SDK you use is imported:
 
@@ -8,9 +8,9 @@ Providers live in their own modules so that only the SDK you use is imported:
     from nepho.azure import AzureProvider
 """
 from .core import (PENDING, RUNNING, STOPPED, TERMINATED, CommandError, Machine, MachineError,
-                   MachineSpec, Process, Provider, ProvisionError, Result, Setup, SetupError,
-                   TextReader, TextWriter, TransportError)
+                   MachineSpec, Process, Provider, ProvisionError, Result, Service, ServiceSpec, Setup,
+                   SetupError, TextReader, TextWriter, TransportError)
 
 __all__ = ["PENDING", "RUNNING", "STOPPED", "TERMINATED", "CommandError", "Machine",
            "MachineError", "MachineSpec", "Process", "Provider", "ProvisionError", "Result",
-           "Setup", "SetupError", "TextReader", "TextWriter", "TransportError"]
+           "Service", "ServiceSpec", "Setup", "SetupError", "TextReader", "TextWriter", "TransportError"]

@@ -9,7 +9,8 @@ from datetime import timedelta
 import pytest
 import pytest_asyncio
 
-from nepho import RUNNING, STOPPED, Machine, MachineSpec, ProvisionError, Setup, SetupError
+from nepho import (RUNNING, STOPPED, Machine, MachineSpec, ProvisionError, ServiceSpec, Setup,
+                   SetupError)
 from nepho.core import Info
 from nepho.docker import DockerProvider
 from nepho.ssh import SshTransport, ensure_key
@@ -148,3 +149,98 @@ async def test_dead_machines_listed_then_reaped(provider):
     assert listed[m.id].state == STOPPED          # dead, but still enumerated
     assert await provider.reap() >= 1
     assert m.id not in {x.id for x in await provider.list()}
+
+
+# ---------------------------------------------------------------- services
+
+async def _valkey(host, port, *commands):
+    """Send commands in the Redis protocol and return one reply line for each."""
+    reader, writer = await asyncio.open_connection(host, port)
+    replies = []
+    for words in commands:
+        writer.write(b"".join([b"*%d\r\n" % len(words)]
+                              + [b"$%d\r\n%s\r\n" % (len(w), w.encode()) for w in words]))
+        line = (await reader.readline()).decode().strip()
+        if line.startswith("$"):  # bulk string: the value is on the next line
+            line = (await reader.readline()).decode().strip()
+        replies.append(line)
+    writer.close()
+    return replies
+
+
+async def _postgres_auth_request(host, port):
+    """Open a session in the PostgreSQL protocol; return the authentication method asked for."""
+    reader, writer = await asyncio.open_connection(host, port)
+    body = (196608).to_bytes(4, "big") + b"user\0nepho\0database\0nepho\0\0"
+    writer.write((len(body) + 4).to_bytes(4, "big") + body)
+    head = await reader.readexactly(9)
+    writer.close()
+    return chr(head[0]), int.from_bytes(head[5:9], "big")
+
+
+def _exec(provider, id, argv):
+    r = provider._c.containers.get(id).exec_run(argv)
+    return r.exit_code, r.output.decode()
+
+
+async def test_valkey(provider):
+    s = await provider.create_service(ServiceSpec(kind="valkey"))
+    try:
+        assert s.state == RUNNING and s.version == "8" and s.host == "127.0.0.1"
+        assert s.url == f"redis://default:{s.password}@127.0.0.1:{s.port}/0"
+        assert s.internal_url == f"redis://default:{s.password}@{s.internal_host}:6379/0"
+        assert await _valkey(s.host, s.port, ["PING"]) == ["-NOAUTH Authentication required."]
+        assert await _valkey(s.host, s.port, ["AUTH", s.password], ["SET", "k", "v"],
+                             ["GET", "k"]) == ["+OK", "+OK", "v"]
+        code, out = _exec(provider, s.id, ["valkey-cli", "-u", s.internal_url, "--no-auth-warning", "GET", "k"])
+        assert (code, out.strip()) == (0, "v")
+    finally:
+        await s.destroy()
+    assert s.state == "terminated"
+
+
+async def test_postgres(provider):
+    s = await provider.create_service(ServiceSpec(kind="postgres", version="16"))
+    try:
+        assert s.state == RUNNING and s.version == "16"
+        assert s.url == f"postgresql://nepho:{s.password}@127.0.0.1:{s.port}/nepho"
+        # 'R' + 10: the server on the published port asks for SCRAM password authentication
+        assert await _postgres_auth_request(s.host, s.port) == ("R", 10)
+        code, out = _exec(provider, s.id, ["psql", s.internal_url, "-Atc", "select current_user, version()"])
+        assert code == 0 and out.startswith("nepho|PostgreSQL 16."), out
+        bad = s.internal_url.replace(s.password, "wrong")
+        assert _exec(provider, s.id, ["psql", bad, "-Atc", "select 1"])[0] != 0
+    finally:
+        await s.destroy()
+
+
+async def test_services_list_attach_reap(provider, docker_machine):
+    s = await provider.create_service(ServiceSpec(kind="valkey", labels={"team": "x"},
+                                                  ttl=timedelta(seconds=1)))
+    assert s.id.startswith("s-") and s.labels["team"] == "x"
+    assert s.id in {x.id for x in await provider.list_services()}
+    machines = {x.id for x in await provider.list()}
+    assert s.id not in machines and docker_machine.id in machines   # the two lists are separate
+    assert docker_machine.id not in {x.id for x in await provider.list_services()}
+
+    other = await DockerProvider().attach_service(s.id)             # as a second client would
+    assert other.url == s.url and other.expires == s.expires
+    with pytest.raises(ProvisionError):
+        await provider.attach_service("s-doesnotexist")
+    with pytest.raises(ProvisionError):
+        await provider.attach_service(docker_machine.id)
+
+    await asyncio.sleep(2)
+    assert (await provider.attach_service(s.id)).state == RUNNING   # nothing stops it at the TTL
+    assert await provider.reap() >= 1
+    assert s.id not in {x.id for x in await provider.list_services()}
+    assert docker_machine.id in {x.id for x in await provider.list()}
+
+
+async def test_service_bad_requests(provider):
+    before = {x.id for x in await provider.list_services()}
+    with pytest.raises(ProvisionError):
+        await provider.create_service(ServiceSpec(kind="mysql"))
+    with pytest.raises(ProvisionError):
+        await provider.create_service(ServiceSpec(kind="valkey", version="0.0.0-nope"))
+    assert {x.id for x in await provider.list_services()} == before

@@ -13,7 +13,7 @@ import shlex
 import time
 import urllib.request
 from contextlib import suppress
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta, timezone
 from typing import Awaitable, Callable, Mapping, Protocol, Sequence
 
@@ -22,6 +22,9 @@ L_MANAGED = "nepho-managed"
 L_ID = "nepho-id"
 L_EXPIRES = "nepho-expires"  # unix seconds
 L_USER = "nepho-user"        # SSH login user, where it depends on the OS
+L_KIND = "nepho-kind"        # services only: postgres | valkey
+L_VERSION = "nepho-version"  # services only
+L_SECRET = "nepho-secret"    # services on Docker: the generated password
 
 PENDING, RUNNING, STOPPED, TERMINATED = "pending", "running", "stopped", "terminated"
 
@@ -197,11 +200,11 @@ class Transport(Protocol):
 
 # ---------------------------------------------------------------- helpers
 
-def new_id() -> str:
-    return "m-" + secrets.token_hex(5)
+def new_id(prefix: str = "m") -> str:
+    return f"{prefix}-" + secrets.token_hex(5)
 
 
-def make_labels(id: str, spec: MachineSpec) -> dict[str, str]:
+def make_labels(id: str, spec: "MachineSpec | ServiceSpec") -> dict[str, str]:
     labels = {**spec.labels, L_MANAGED: "true", L_ID: id}
     if spec.ttl is not None:
         labels[L_EXPIRES] = str(int(time.time() + spec.ttl.total_seconds()))
@@ -345,6 +348,71 @@ async def apply_setup(m: Machine, setup: Setup) -> None:
         await step("script", ["sh", "-s"], input=setup.script, env=setup.env)
 
 
+# ---------------------------------------------------------------- services
+
+# kind -> (port, default version, URL scheme, user, database)
+SERVICES = {"postgres": (5432, "17", "postgresql", "nepho", "nepho"),
+            "valkey": (6379, "8", "redis", "default", "0")}
+
+
+@dataclass(frozen=True)
+class ServiceSpec:
+    kind: str                   # postgres | valkey
+    version: str | None = None  # major version; default: see SERVICES
+    cpus: int = 1
+    memory_gb: int = 1
+    disk_gb: int = 20
+    labels: Mapping[str, str] = field(default_factory=dict)
+    ttl: timedelta | None = timedelta(hours=4)
+
+
+@dataclass
+class Service:
+    """A running database or cache. Clients connect with their normal driver.
+
+    `host`/`port` is the endpoint as seen from the caller; `internal_host`/
+    `internal_port` is the one to use from machines of the same provider.
+    Either can be missing when the service is not reachable that way.
+    """
+    id: str
+    kind: str
+    version: str
+    state: str
+    labels: dict[str, str]
+    user: str
+    password: str = field(repr=False)
+    database: str
+    host: str | None = None
+    port: int | None = None
+    internal_host: str | None = None
+    internal_port: int | None = None
+    provider: str = ""
+    _owner: "Provider | None" = field(default=None, repr=False, compare=False)
+
+    def _url(self, host: str | None, port: int | None) -> str | None:
+        if host is None:
+            return None
+        scheme = SERVICES[self.kind][2]
+        return f"{scheme}://{self.user}:{self.password}@{host}:{port}/{self.database}"
+
+    @property
+    def url(self) -> str | None:
+        return self._url(self.host, self.port)
+
+    @property
+    def internal_url(self) -> str | None:
+        return self._url(self.internal_host, self.internal_port)
+
+    @property
+    def expires(self) -> datetime | None:
+        return expires_of(self.labels)
+
+    async def destroy(self) -> None:
+        assert self._owner is not None
+        await self._owner.destroy(self.id)
+        self.state = TERMINATED
+
+
 # ---------------------------------------------------------------- provider
 
 class Provider:
@@ -366,9 +434,17 @@ class Provider:
     def _transport(self, info: Info) -> Transport:
         raise NotImplementedError
 
+    def _launch_service(self, id: str, spec: ServiceSpec, labels: dict[str, str]) -> Service:
+        """Returns when the service accepts connections."""
+        raise ProvisionError(f"{self.name}: services are not supported yet")
+
+    def _list_services(self) -> list[Service]:
+        return []
+
     def _reapable(self) -> set[str]:
         now = datetime.now(timezone.utc)
-        return {i.id for i in self._list() if (e := expires_of(i.labels)) and e < now}
+        return {i.id for i in [*self._list(), *self._list_services()]
+                if (e := expires_of(i.labels)) and e < now}
 
     async def _ready(self, m: Machine, spec: MachineSpec) -> None:
         pass
@@ -402,10 +478,39 @@ class Provider:
         raise ProvisionError(f"{self.name}: no machine {id}")
 
     async def destroy(self, id: str) -> None:
+        """Destroy a machine or a service."""
         await self._call(self._destroy, id)
 
+    async def create_service(self, spec: ServiceSpec) -> Service:
+        """Create a database or cache. Returns when it accepts connections."""
+        if spec.kind not in SERVICES:
+            raise ProvisionError(f"{self.name}: unknown service kind {spec.kind!r}")
+        spec = replace(spec, version=spec.version or SERVICES[spec.kind][1])
+        id = new_id("s")
+        labels = {**make_labels(id, spec), L_KIND: spec.kind, L_VERSION: spec.version}
+        try:
+            return self._own(await self._call(self._launch_service, id, spec, labels))
+        except BaseException:
+            with suppress(Exception):
+                await asyncio.shield(self._call(self._destroy, id))
+            raise
+
+    async def list_services(self) -> list[Service]:
+        """Every service the backend still knows, in any state."""
+        return [self._own(s) for s in await self._call(self._list_services)]
+
+    async def attach_service(self, id: str) -> Service:
+        for s in await self.list_services():
+            if s.id == id:
+                return s
+        raise ProvisionError(f"{self.name}: no service {id}")
+
+    def _own(self, s: Service) -> Service:
+        s.provider, s._owner = self.name, self
+        return s
+
     async def reap(self) -> int:
-        """Destroy machines whose TTL has passed. Returns how many."""
+        """Destroy machines and services whose TTL has passed. Returns how many."""
         ids = await self._call(self._reapable)
         for id in ids:
             await self.destroy(id)
