@@ -386,6 +386,7 @@ class Service:
     port: int | None = None
     internal_host: str | None = None
     internal_port: int | None = None
+    tls: bool = False  # the server accepts only encrypted connections
     provider: str = ""
     _owner: "Provider | None" = field(default=None, repr=False, compare=False)
 
@@ -393,6 +394,8 @@ class Service:
         if host is None:
             return None
         scheme = SERVICES[self.kind][2]
+        if self.tls and scheme == "redis":
+            scheme = "rediss"
         return f"{scheme}://{self.user}:{self.password}@{host}:{port}/{self.database}"
 
     @property
