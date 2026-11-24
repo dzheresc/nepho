@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	awssdk "github.com/aws/aws-sdk-go-v2/aws"
@@ -226,6 +227,9 @@ func (d *driver) groups(ctx context.Context, key, value string) ([]types.Securit
 }
 
 func (d *driver) Destroy(ctx context.Context, id string) error {
+	if strings.HasPrefix(id, "s-") {
+		return fmt.Errorf("%w: aws: %s is a service; only the Python version can destroy it", nepho.ErrProvision, id)
+	}
 	found, err := d.instances(ctx, nepho.LID, id)
 	if err != nil {
 		return err

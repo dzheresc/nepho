@@ -2,6 +2,7 @@ package aws
 
 import (
 	"context"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -9,6 +10,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	nepho "github.com/dzheresc/nepho/go"
 )
 
 const groupsXML = `<DescribeSecurityGroupsResponse xmlns="http://ec2.amazonaws.com/doc/2016-11-15/"><securityGroupInfo>
@@ -19,10 +22,13 @@ const groupsXML = `<DescribeSecurityGroupsResponse xmlns="http://ec2.amazonaws.c
 <item><key>nepho-kind</key><value>postgres</value></item></tagSet></item>
 </securityGroupInfo></DescribeSecurityGroupsResponse>`
 
-// Reap must remove an expired machine's group and leave a service's group alone.
-func TestReapSkipsServices(t *testing.T) {
+// Reap must remove an expired machine's group and leave a service's group alone;
+// Destroy must refuse a service without calling AWS.
+func TestServicesAreLeftAlone(t *testing.T) {
 	var deleted []string
+	calls := 0
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
 		body, _ := io.ReadAll(r.Body)
 		q, _ := url.ParseQuery(string(body))
 		out := "<" + q.Get("Action") + "Response/>"
@@ -53,6 +59,10 @@ func TestReapSkipsServices(t *testing.T) {
 	p, err := New(ctx, Options{Region: "us-east-1", KeyPath: filepath.Join(t.TempDir(), "id_rsa")})
 	if err != nil {
 		t.Fatal(err)
+	}
+	err = p.Destroy(ctx, "s-old")
+	if !errors.Is(err, nepho.ErrProvision) || !strings.Contains(err.Error(), "s-old is a service") || calls != 0 {
+		t.Fatalf("calls=%d err=%v", calls, err)
 	}
 	n, err := p.Reap(ctx)
 	if err != nil || n != 1 || len(deleted) != 1 || deleted[0] != "sg-m" {

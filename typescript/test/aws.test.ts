@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { AwsProvider } from "../src/aws.js";
+import { ProvisionError } from "../src/core.js";
 
 const group = (gid: string, tags: Record<string, string>) =>
   `<item><groupId>${gid}</groupId><tagSet>` + Object.entries(tags)
@@ -17,9 +18,11 @@ const GROUPS: Record<string, string> = {
   }),
 };
 
-test("aws: reap removes an expired machine's group and leaves a service's group alone", async () => {
+test("aws: reap skips services and destroy refuses them", async () => {
   const deleted: (string | null)[] = [];
+  let calls = 0;
   const server = createServer(async (req, res) => {
+    calls++;
     let body = "";
     for await (const chunk of req) body += chunk;
     const q = new URLSearchParams(body);
@@ -41,6 +44,9 @@ test("aws: reap removes an expired machine's group and leaves a service's group 
   });
   try {
     const p = new AwsProvider({ region: "us-east-1", keyPath: join(dir, "id_rsa") });
+    await assert.rejects(p.destroy("s-old"),
+      (e) => e instanceof ProvisionError && e.message.includes("s-old is a service"));
+    assert.equal(calls, 0);
     assert.equal(await p.reap(), 1);
     assert.deepEqual(deleted, ["sg-m"]);
   } finally {

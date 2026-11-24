@@ -122,6 +122,9 @@ export class AwsProvider extends Provider {
   }
 
   protected async remove(id: string): Promise<void> {
+    if (id.startsWith("s-")) {
+      throw new ProvisionError(`aws: ${id} is a service; only the Python version can destroy it`);
+    }
     const ec2 = this.ec2;
     const ids = (await this.instances(L_ID, id))
       .filter((i) => i.State?.Name !== "terminated").map((i) => i.InstanceId!);

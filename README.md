@@ -127,7 +127,7 @@ TypeScript: `createService({ kind: "postgres" })`, `listServices()`,
 - On AWS the password is stored in the SSM Parameter Store under `/nepho/<id>`,
   and nothing stops a service at its TTL: it runs, and costs money, until
   `reap()` or `destroy()`. Use Python for both: `reap()` in TypeScript and Go
-  skips AWS services, and `destroy()` there cannot delete them. `destroy()` deletes the data without a final
+  skips AWS services, and `destroy()` there refuses them with an error. `destroy()` deletes the data without a final
   snapshot, and automatic backups are off.
 
 ## How it works
@@ -177,7 +177,7 @@ TypeScript: `createService({ kind: "postgres" })`, `listServices()`,
 ## Tests
 
 The same 28 conformance checks exist in each language. They need only Docker.
-TypeScript and Go add one AWS `reap()` test against a fake local endpoint.
+TypeScript and Go add one AWS `reap()` and `destroy()` test against a fake local endpoint.
 Run one suite at a time: they share the Docker daemon and count each other's
 machines.
 
