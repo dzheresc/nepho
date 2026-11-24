@@ -1,4 +1,4 @@
-module example.com/nepho
+module github.com/dzheresc/nepho/go
 
 go 1.26.0
 

@@ -12,10 +12,10 @@ import (
 	"strings"
 	"time"
 
-	"example.com/nepho"
-	"example.com/nepho/aws"
-	"example.com/nepho/azure"
-	"example.com/nepho/gcp"
+	nepho "github.com/dzheresc/nepho/go"
+	"github.com/dzheresc/nepho/go/aws"
+	"github.com/dzheresc/nepho/go/azure"
+	"github.com/dzheresc/nepho/go/gcp"
 )
 
 func main() {

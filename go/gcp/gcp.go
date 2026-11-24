@@ -13,7 +13,7 @@ import (
 	"google.golang.org/api/iterator"
 	"google.golang.org/protobuf/proto"
 
-	"example.com/nepho"
+	nepho "github.com/dzheresc/nepho/go"
 )
 
 const user = "nepho"

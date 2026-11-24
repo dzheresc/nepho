@@ -17,8 +17,8 @@ import (
 	"github.com/docker/docker/client"
 	"github.com/docker/docker/pkg/stdcopy"
 
-	"example.com/nepho"
-	"example.com/nepho/docker"
+	nepho "github.com/dzheresc/nepho/go"
+	"github.com/dzheresc/nepho/go/docker"
 )
 
 // valkey sends commands in the Redis protocol and returns one reply line for each.

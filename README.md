@@ -5,7 +5,8 @@ is called `nepho` and exists three times with the same behaviour: `python/`,
 `typescript/` and `go/`. Linux guests only.
 
 Machines work on all four backends. Services (PostgreSQL, Valkey) work on
-Docker only so far.
+Docker in all three languages, and on AWS in Python only. The AWS services have
+not yet been run against a real account.
 
 ## What it does
 
@@ -56,9 +57,14 @@ console.log(await p.wait());
 await m.destroy();
 ```
 
-Go:
+Go (the module is `github.com/dzheresc/nepho/go`, the package is `nepho`):
 
 ```go
+import (
+	nepho "github.com/dzheresc/nepho/go"
+	"github.com/dzheresc/nepho/go/docker"
+)
+
 provider, _ := docker.New(docker.Options{})
 m, _ := provider.Create(ctx, nepho.Spec{OS: "ubuntu-24.04", Setup: nepho.Setup{Packages: []string{"git"}}})
 p, _ := m.Execute(ctx, []string{"cat"}, nil)
@@ -96,10 +102,10 @@ TypeScript: `createService({ kind: "postgres" })`, `listServices()`,
 `CreateService(ctx, nepho.ServiceSpec{Kind: "postgres"})`, `ListServices`,
 `AttachService`, `service.URL()`, `service.InternalURL()`.
 
-| Kind | Default version | Docker image | URL scheme |
-|---|---|---|---|
-| `postgres` | 17 | `postgres:<version>` | `postgresql://` |
-| `valkey` | 8 | `valkey/valkey:<version>` | `redis://` |
+| Kind | Default version | Docker | AWS (Python) | URL scheme |
+|---|---|---|---|---|
+| `postgres` | 17 | `postgres:<version>` | RDS | `postgresql://` |
+| `valkey` | 8 | `valkey/valkey:<version>` | ElastiCache | `redis://`, with TLS `rediss://` |
 
 - `create_service` returns when the server accepts connections. A random
   password is generated for each service.
@@ -113,6 +119,16 @@ TypeScript: `createService({ kind: "postgres" })`, `listServices()`,
   password is stored in the container label `nepho-secret`, and nothing stops a
   service at its TTL (default 4 hours): it runs until `reap()` or `destroy()`.
 - `version` is used as the image tag on Docker, so any published tag works.
+- On AWS, services use the default VPC and accept only TLS connections.
+  `postgres` has a public endpoint limited to the caller's IP (or `ssh_cidr`)
+  and the VPC. `valkey` is reachable only from inside the VPC, so it has an
+  `internal_url` and no `url`. For Valkey the newest ElastiCache version
+  matching `version` is used.
+- On AWS the password is stored in the SSM Parameter Store under `/nepho/<id>`,
+  and nothing stops a service at its TTL: it runs, and costs money, until
+  `reap()` or `destroy()`. Use Python for both: the TypeScript and Go versions
+  do not know AWS services. `destroy()` deletes the data without a final
+  snapshot, and automatic backups are off.
 
 ## How it works
 
@@ -127,8 +143,9 @@ TypeScript: `createService({ kind: "postgres" })`, `listServices()`,
   apt packages, files, script. A failure raises `SetupError` with the output
   and destroys the half-made machine.
 - Every resource carries the labels `nepho-managed`, `nepho-id` and
-  `nepho-expires`; services also carry `nepho-kind` and `nepho-version`. That is how `list`, `attach` and `reap` find machines, so
-  the three implementations can manage each other's machines.
+  `nepho-expires`; services also carry `nepho-kind` and `nepho-version`. That is
+  how `list`, `attach` and `reap` find machines, so the three implementations
+  can manage each other's machines.
 - The clouds share one SSH key, `~/.config/nepho/id_rsa`, created on first
   use. Port 22 is opened only to the caller's public IP (override with the
   `ssh_cidr` option).
@@ -141,10 +158,10 @@ TypeScript: `createService({ kind: "postgres" })`, `listServices()`,
 
 ## Limits
 
-- AWS, GCP and Azure have been run against real accounts from all three
+- Machines on AWS, GCP and Azure have been run against real accounts from all three
   languages (Ubuntu 24.04: create with prerequisites, execute, list, attach,
   destroy). Not yet exercised there: `reap()`, Debian 12, Ubuntu 22.04, and
-  TTL self-termination on AWS.
+  TTL self-termination on AWS. Services on AWS have not been run at all.
 - EC2 keeps listing a terminated instance for about an hour. On GCP a
   destroyed machine disappears from `list()` at once.
 - On GCP the stock firewall rule `default-allow-ssh` opens port 22 to
@@ -156,7 +173,6 @@ TypeScript: `createService({ kind: "postgres" })`, `listServices()`,
 - Output is buffered until read. For large outputs read the streams or use
   `run()`.
 - With `pty`, stderr is merged into stdout and closing stdin sends Ctrl-D.
-- The Go module path `example.com/nepho` is a placeholder.
 
 ## Tests
 
@@ -176,12 +192,12 @@ override with `NEPHO_CPUS` and `NEPHO_MEMS`.
 ## Running against AWS
 
 Credentials come from the SDK default chain (`~/.aws/config` and
-`~/.aws/credentials`). The IAM user needs: `ec2:DescribeImages`,
-`ec2:DescribeInstances`, `ec2:DescribeSecurityGroups`, `ec2:RunInstances`,
-`ec2:CreateSecurityGroup`, `ec2:CreateTags`, `ec2:TerminateInstances`,
-`ec2:DeleteSecurityGroup`, `ec2:AuthorizeSecurityGroupIngress`, and
-`ssm:GetParameter` on `arn:aws:ssm:*::parameter/aws/service/*`. The last three
-EC2 actions can be limited to resources tagged `nepho-managed=true`.
+`~/.aws/credentials`). The IAM policy for machines and
+services is in [docs/aws-policy.json](docs/aws-policy.json). It allows creating
+resources in `us-east-1` only; change the region there to use another one.
+Services also need the RDS, ElastiCache and `/nepho` Parameter Store
+permissions; for machines alone the EC2 statements and `ImageLookup` are
+enough.
 
 ## Running against GCP
 
@@ -218,6 +234,13 @@ size that overrides the default:
 cd python && .venv/bin/python examples/smoke.py aws
 ./node.sh npx tsx examples/smoke.ts gcp
 ./go.sh go run ./examples/smoke azure Standard_D2as_v6
+```
+
+Services have their own example, which takes 15 to 30 minutes and is Python
+and AWS only:
+
+```sh
+cd python && .venv/bin/python examples/smoke_services.py aws
 ```
 
 Outside the containers, load the Azure variables first:

@@ -15,7 +15,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/ssm"
 	"github.com/aws/smithy-go"
 
-	"example.com/nepho"
+	nepho "github.com/dzheresc/nepho/go"
 )
 
 func ubuntu(version string, gp int) string {

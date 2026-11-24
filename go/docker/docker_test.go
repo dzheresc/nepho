@@ -16,8 +16,8 @@ import (
 	"testing"
 	"time"
 
-	"example.com/nepho"
-	"example.com/nepho/docker"
+	nepho "github.com/dzheresc/nepho/go"
+	"github.com/dzheresc/nepho/go/docker"
 )
 
 const sshdSetup = `

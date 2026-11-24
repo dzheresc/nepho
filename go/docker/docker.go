@@ -21,7 +21,7 @@ import (
 	"github.com/docker/docker/pkg/stdcopy"
 	"github.com/docker/go-connections/nat"
 
-	"example.com/nepho"
+	nepho "github.com/dzheresc/nepho/go"
 )
 
 var images = map[string]string{
