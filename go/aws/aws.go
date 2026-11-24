@@ -273,6 +273,8 @@ func (d *driver) Destroy(ctx context.Context, id string) error {
 
 // Reapable lists expired machines by their security groups: every machine owns one
 // until it is destroyed, including instances that already terminated themselves.
+// Service groups (created by the Python version) are skipped: this driver cannot
+// delete the database behind them.
 func (d *driver) Reapable(ctx context.Context) ([]string, error) {
 	groups, err := d.groups(ctx, nepho.LManaged, "true")
 	if err != nil {
@@ -282,6 +284,9 @@ func (d *driver) Reapable(ctx context.Context) ([]string, error) {
 	var out []string
 	for _, g := range groups {
 		labels := fromTags(g.Tags)
+		if _, service := labels[nepho.LKind]; service {
+			continue
+		}
 		id, expires := labels[nepho.LID], nepho.ExpiresOf(labels)
 		if id != "" && !seen[id] && !expires.IsZero() && expires.Before(time.Now()) {
 			seen[id] = true

@@ -7,7 +7,7 @@ import {
 } from "@aws-sdk/client-ec2";
 import { GetParameterCommand, SSMClient } from "@aws-sdk/client-ssm";
 import {
-  type FullSpec, type Info, L_ID, L_MANAGED, L_USER, type Machine, Provider, ProvisionError,
+  type FullSpec, type Info, L_ID, L_KIND, L_MANAGED, L_USER, type Machine, Provider, ProvisionError,
   type State, type Transport, expiresOf, myCidr, pickSize, sleep, ttlMinutes,
 } from "./core.js";
 import { SshTransport, ensureKey, sshReady } from "./ssh.js";
@@ -144,11 +144,14 @@ export class AwsProvider extends Provider {
 
   protected override async reapable(): Promise<string[]> {
     // Every machine owns a security group until it is destroyed, so the groups are the
-    // complete list, including instances that already terminated themselves.
+    // complete list, including instances that already terminated themselves. Service
+    // groups (created by the Python version) are skipped: this class cannot delete the
+    // database behind them.
     const now = new Date();
     const out = new Set<string>();
     for (const g of await this.groups(L_MANAGED, "true")) {
       const labels = fromTags(g.Tags);
+      if (L_KIND in labels) continue;
       const expires = expiresOf(labels);
       if (labels[L_ID] && expires && expires < now) out.add(labels[L_ID]);
     }
